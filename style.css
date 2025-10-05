@@ -1,0 +1,203 @@
+:root {
+  --bg: #000000;
+  --panel: #1a1a1a;
+  --card: #1a1a1a;
+  --accent: #ff004f;
+  --muted: #9ca3af;
+  --text: #ffffff;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: Inter, system-ui, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Fade-in */
+body { animation: fadeIn 0.8s ease-in-out; }
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+/* HEADER */
+header.appbar {
+  background: var(--panel);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand h1 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+.brand small { color: var(--muted); font-size: 0.8rem; }
+.header-actions { display: flex; gap: 12px; align-items: center; }
+
+/* BUTTON BASE */
+.btn {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: none;
+  transition: all 0.25s ease;
+}
+
+/* TOMBOL KHUSUS */
+.btn-raw, .btn-kalman, .btn-telegram {
+  font-weight: 600;
+  font-size: 0.95rem;       /* sedikit lebih besar dari 0.85rem */
+  padding: 10px 18px;       /* lebih lebar & tinggi */
+  border-radius: 8px;       /* sudut sedikit lebih bulat */
+  color: #fff;
+  border: none;
+  transition: all 0.25s ease;
+}
+
+.btn-raw {
+  background: var(--accent);
+}
+.btn-raw:hover {
+  background: #e00045;
+  box-shadow: 0 4px 15px rgba(255,0,79,0.6);
+  transform: translateY(-2px) scale(1.05); /* sedikit lebih besar efek hover */
+}
+
+.btn-kalman {
+  background: #4ea1f3;
+}
+.btn-kalman:hover {
+  background: #3d8ad3;
+  box-shadow: 0 4px 15px rgba(78,161,243,0.6);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.btn-telegram {
+  background: #229ED9;
+}
+.btn-telegram:hover {
+  background: #1d87b9;
+  box-shadow: 0 4px 15px rgba(34,158,217,0.6);
+  transform: translateY(-2px) scale(1.05);
+}
+
+
+/* MAIN LAYOUT */
+.container-main {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  height: calc(100vh - 60px);
+}
+.panel {
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* MAP */
+#map {
+  flex: 1;
+  min-height: 90%;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  transition: transform 0.3s ease;
+}
+#map:hover { transform: scale(1.01); }
+
+/* CARD */
+.card {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: all 0.3s ease;
+}
+.card:hover {
+  box-shadow: 0 6px 18px rgba(255,0,79,0.4);
+  transform: translateY(-2px);
+}
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.muted { color: var(--muted); }
+.small { font-size: 0.8rem; }
+.status-flag { font-weight: 700; color: var(--accent); }
+.distance-value { font-weight: 700; font-size: 1.1rem; }
+
+/* Icon motor di kanan */
+.card-body {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.distance {
+  flex: 1;
+}
+.icon-motor {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* CONTROLS */
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.controls button {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  background: var(--accent);
+  color: #fff;
+  transition: all 0.25s ease;
+}
+.controls button:hover {
+  background: #e00045;
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 4px 15px rgba(255,0,79,0.5);
+}
+
+/* ALERT BOX */
+.big-alert {
+  background: var(--accent);
+  color: white;
+  border-radius: 10px;
+  padding: 10px;
+  text-align: center;
+  font-weight: 700;
+  display: none;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0% { box-shadow: 0 0 0 rgba(255,0,79,0.6); }
+  50% { box-shadow: 0 0 15px rgba(255,0,79,0.8); }
+  100% { box-shadow: 0 0 0 rgba(255,0,79,0.6); }
+}
+
+/* RESPONSIVE */
+@media (max-width: 900px) {
+  .container-main { flex-direction: column; align-items: flex-start; }
+  #map { width: 100%; height: 250px; }
+  .panel { width: 100%; }
+}

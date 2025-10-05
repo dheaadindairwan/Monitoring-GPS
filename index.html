@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Dashboard • M`onitoring</title>
+
+    <!-- Leaflet library untuk peta -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <!-- CSS custom (style.css) -->
+    <link rel="stylesheet" href="style.css" />
+
+    <style>
+      /* Tambahkan styling tombol alarm aktif */
+      #btn-alarm.active {
+        background-color: #ff4c4c;
+        color: white;
+        border: 1px solid #ff0000;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="app">
+      <!-- === Header / App bar === -->
+      <header class="appbar">
+        <div class="brand">
+          <div>
+            <h1>Dashboard Monitoring Motor</h1>
+            <small>Real-time GPS • Geo-fencing </small>
+          </div>
+        </div>
+        <div class="header-actions">
+          <!-- Status GPS -->
+          <div class="badge-status">GPS: <span id="header-sys">OFF</span></div>
+
+          <!-- Tombol buka Telegram bot -->
+          <button id="btn-open-telegram" class="btn-telegram">Telegram</button>
+        </div>
+      </header>
+
+      <!-- === Main content: panel + map === -->
+      <main class="container-main">
+        <!-- === Sidebar / Panel kontrol === -->
+        <aside class="panel">
+          <!-- Card status zona -->
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <div class="muted">Zona</div>
+                <div id="zona-status" class="status-flag">-</div>
+              </div>
+              <div class="right">
+                <div class="muted">Update</div>
+                <div id="last-update">-</div>
+              </div>
+            </div>
+            <hr />
+            <div class="card-body">
+              <!-- Jarak user ↔ motor -->
+              <div class="distance">
+                <div class="muted small">Jarak ke motor</div>
+                <div id="jarak" class="distance-value">-</div>
+              </div>
+              <div class="icon-motor">
+                <img
+                  src="https://img.icons8.com/ios-filled/48/ffffff/motorcycle--v1.png"
+                  width="48"
+                  alt="motor"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- Card tampilan marker + kontrol sistem -->
+          <div class="card">
+            <!-- Tombol pilih marker yang ditampilkan -->
+            <div>
+              <div class="muted small">Tampilan Marker</div>
+              <div class="marker-buttons">
+                <button id="btn-toggle-raw" class="btn-raw">Raw</button>
+                <button id="btn-toggle-kalman" class="btn-kalman">
+                  Kalman
+                </button>
+              </div>
+            </div>
+
+            <!-- Kontrol sistem utama -->
+            <div class="system-control">
+              <div class="muted small">Kontrol Sistem</div>
+              <div class="controls">
+                <button id="btn-system">Nyalakan GPS</button>
+                <button id="btn-alarm" class="warning">Nyalakan Alarm</button>
+                <button id="btn-trigger" class="info">Trigger Kamera</button>
+              </div>
+              <!-- Kontrol jalur GPS -->
+              <div class="muted small">Jalur GPS</div>
+              <div class="controls">
+                <button id="btn-reset-path" class="info">Reset Jalur</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Notifikasi bahaya -->
+          <div id="alert-box" class="big-alert" style="display: none">
+            🚨 MOTOR KELUAR ZONA!
+          </div>
+
+          <!-- Catatan kecil -->
+          <div class="card muted small">
+            <div><strong>Catatan:</strong></div>
+            <ul>
+              <li>Foto dikirim ke Telegram (tidak tampil di dashboard).</li>
+            </ul>
+          </div>
+
+          <!-- Tombol download log -->
+          <div>
+            <a
+              id="btn-download-log"
+              class="btn"
+              href="/api/gps-log"
+              target="_blank"
+              >Download CSV Log</a
+            >
+          </div>
+        </aside>
+
+        <!-- === Area peta utama === -->
+        <div id="map" style="height: 600px"></div>
+      </main>
+    </div>
+
+    <!-- Scripts utama dashboard -->
+    <script>
+      // ==== Konfigurasi dasar ====
+      const API_BASE =
+        location.hostname === "localhost" || location.hostname === "127.0.0.1"
+          ? "http://localhost:3000"
+          : location.origin;
+      const POLL_INTERVAL = 3000; // interval ambil data server
+
+      // ==== Inisialisasi peta Leaflet ====
+      const map = L.map("map", { zoomControl: true }).setView(
+        [-6.2, 106.816],
+        13
+      );
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap",
+      }).addTo(map);
+
+      // ==== Marker ikon ====
+      const redIcon = L.icon({
+        iconUrl: "http://maps.google.com/mapfiles/ms/icons/red-dot.png",
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+      });
+      const blueIcon = L.icon({
+        iconUrl: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+      });
+      const greenIcon = L.icon({
+        iconUrl: "http://maps.google.com/mapfiles/ms/icons/green-dot.png",
+        iconSize: [32, 32],
+        iconAnchor: [16, 32],
+      });
+
+      // Marker untuk lokasi motor
+      const markerRaw = L.marker([-6.2, 106.816], { icon: redIcon })
+        .addTo(map)
+        .bindPopup("Raw GPS");
+      const markerKalman = L.marker([-6.201, 106.817], { icon: blueIcon })
+        .addTo(map)
+        .bindPopup("Kalman GPS");
+      // Marker user
+      const userMarker = L.marker([-6.202, 106.818], { icon: greenIcon })
+        .addTo(map)
+        .bindPopup("Anda");
+
+      // ======== Polyline untuk jalur GPS ========
+      let pathRaw = [];
+      let pathKalman = [];
+      let polylineRaw = L.polyline([], { color: "red" }).addTo(map);
+      let polylineKalman = L.polyline([], { color: "blue" }).addTo(map);
+
+      // ===== Tambahan untuk geofence =====
+      let currentLat = null;
+      let currentLon = null;
+      let safeCircle = null; // lingkaran zona aman
+      const SAFE_RADIUS = 20; // Radius zona aman (meter)
+      let systemOn = false; // status sistem
+
+      // ==== State marker toggle ====
+      let showRaw = true;
+      let showKalman = true;
+
+      // ==== Event tombol toggle marker ====
+      document
+        .getElementById("btn-toggle-raw")
+        .addEventListener("click", () => {
+          showRaw = !showRaw;
+          if (showRaw) {
+            markerRaw.addTo(map);
+            polylineRaw.addTo(map);
+          } else {
+            markerRaw.remove();
+            polylineRaw.remove();
+          }
+        });
+
+      document
+        .getElementById("btn-toggle-kalman")
+        .addEventListener("click", () => {
+          showKalman = !showKalman;
+          if (showKalman) {
+            markerKalman.addTo(map);
+            polylineKalman.addTo(map);
+          } else {
+            markerKalman.remove();
+            polylineKalman.remove();
+          }
+        });
+
+      // ==== Deteksi lokasi user (via browser) ====
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const p = [pos.coords.latitude, pos.coords.longitude];
+            userMarker.setLatLng(p);
+            map.setView(p, 15);
+          },
+          (err) => console.warn("Lokasi user gagal didapat:", err),
+          { enableHighAccuracy: true }
+        );
+      }
+
+      // ==== State alarm ====
+      let alarmOn = false;
+
+      // ==== Fungsi ambil data monitoring dari server ====
+      async function fetchLatestData() {
+        try {
+          const response = await fetch(`${API_BASE}/api/monitoring`);
+          if (!response.ok) throw new Error("Gagal mengambil data");
+          const data = await response.json();
+          onLocationUpdate(data);
+        } catch (error) {
+          console.error("Error fetching data:", error);
+        }
+      }
+
+      // Polling data setiap interval
+      setInterval(fetchLatestData, POLL_INTERVAL);
+      fetchLatestData();
+
+      // ==== Fungsi update posisi dan UI berdasarkan data terbaru ====
+      function onLocationUpdate(d) {
+        const lat_raw = parseFloat(d.lat_raw ?? d.latitude ?? NaN);
+        const lon_raw = parseFloat(d.lon_raw ?? d.longitude ?? NaN);
+        const lat_k = parseFloat(d.lat_kalman ?? d.lat_k ?? NaN);
+        const lon_k = parseFloat(d.lon_kalman ?? d.lon_k ?? NaN);
+        const status = (d.statusZona || d.status || "").toString();
+        const waktu = d.waktu || new Date().toISOString();
+
+        // update marker raw
+        if (!isNaN(lat_raw) && !isNaN(lon_raw)) {
+          markerRaw.setLatLng([lat_raw, lon_raw]);
+          pathRaw.push([lat_raw, lon_raw]);
+          polylineRaw.setLatLngs(pathRaw);
+        }
+        // update marker kalman
+        if (!isNaN(lat_k) && !isNaN(lon_k)) {
+          markerKalman.setLatLng([lat_k, lon_k]);
+          pathKalman.push([lat_k, lon_k]);
+          polylineKalman.setLatLngs(pathKalman);
+        }
+
+        // set current motor coords (prioritaskan kalman bila ada)
+        if (!isNaN(lat_k) && !isNaN(lon_k)) {
+          currentLat = lat_k;
+          currentLon = lon_k;
+        } else if (!isNaN(lat_raw) && !isNaN(lon_raw)) {
+          currentLat = lat_raw;
+          currentLon = lon_raw;
+        }
+
+        // update status zona
+        document.getElementById("zona-status").textContent =
+          status.toLowerCase().includes("bahaya") ||
+          status.toLowerCase().includes("danger")
+            ? "🚨 Keluar Zona"
+            : "✅ Aman";
+        // update waktu terakhir
+        document.getElementById("last-update").textContent = new Date(
+          waktu
+        ).toLocaleString();
+        // update header system ON/OFF
+        document.getElementById("header-sys").textContent =
+          d.deviceOn === false ? "OFF" : "ON";
+
+        // update status alarm
+        alarmOn = d.alarmOn === true;
+        updateAlarmButtonUI();
+
+        // hitung jarak user ↔ motor
+        const target =
+          !isNaN(lat_k) && !isNaN(lon_k)
+            ? L.latLng(lat_k, lon_k)
+            : !isNaN(lat_raw) && !isNaN(lon_raw)
+            ? L.latLng(lat_raw, lon_raw)
+            : null;
+
+        if (target) {
+          const dist = userMarker.getLatLng().distanceTo(target);
+          document.getElementById("jarak").textContent = `${dist.toFixed(
+            1
+          )} meter`;
+        }
+
+        // tampilkan alert jika bahaya
+        const sysOn = d.deviceOn !== false;
+        if (
+          (status.toLowerCase().includes("bahaya") ||
+            status.toLowerCase().includes("danger")) &&
+          sysOn
+        ) {
+          showAlert(true);
+        } else {
+          showAlert(false);
+        }
+      }
+
+      // ==== Update tampilan tombol alarm ====
+      function updateAlarmButtonUI() {
+        const btnAlarm = document.getElementById("btn-alarm");
+        btnAlarm.textContent = alarmOn ? "Matikan Alarm" : "Nyalakan Alarm";
+        if (alarmOn) {
+          btnAlarm.classList.add("active");
+        } else {
+          btnAlarm.classList.remove("active");
+        }
+      }
+
+      // ==== Tampilkan / sembunyikan alert bahaya ====
+      function showAlert(flag) {
+        const el = document.getElementById("alert-box");
+        el.style.display = flag ? "block" : "none";
+        if (flag)
+          el.onclick = () => window.scrollTo({ top: 0, behavior: "smooth" });
+        else el.onclick = null;
+      }
+
+      // ==== Tombol trigger kamera ====
+      document
+        .getElementById("btn-trigger")
+        .addEventListener("click", async () => {
+          try {
+            await fetch(`${API_BASE}/trigger-camera`, { method: "POST" });
+            alert("Trigger kamera terkirim.");
+          } catch (error) {
+            alert("Gagal mengirim trigger kamera");
+          }
+        });
+
+      // ==== Tombol nyalakan/matikan sistem ====
+      document
+        .getElementById("btn-system")
+        .addEventListener("click", async () => {
+          try {
+            // Ambil status terkini/terbaru dari server
+            const statusResponse = await fetch(`${API_BASE}/api/monitoring`);
+            const currentData = await statusResponse.json();
+            const currentStatus = currentData.deviceOn !== false;
+            const newStatus = !currentStatus;
+
+            // Jika akan mengaktifkan, pastikan kita punya koordinat terakhir di client
+            const body = { active: newStatus };
+            if (newStatus) {
+              // pastikan ada koordinat motor sebelum ON
+              if (currentLat == null || currentLon == null) {
+                alert(
+                  "Lokasi motor belum tersedia, tunggu sampai GPS dikirim."
+                );
+                return;
+              }
+              body.lat = Number(currentLat);
+              body.lon = Number(currentLon);
+              console.log(
+                "[DEBUG] Mengirim system-status ON dengan coords:",
+                body.lat,
+                body.lon
+              );
+            } else {
+              console.log("[DEBUG] Mengirim system-status OFF");
+            }
+
+            // kirim ke server
+            const res = await fetch(`${API_BASE}/system-status`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+
+            if (!res.ok) {
+              const t = await res.text().catch(() => null);
+              throw new Error(`Server error ${res.status} ${t || ""}`);
+            }
+            const j = await res.json();
+            console.log("[DEBUG] /system-status response:", j);
+
+            // Update UI & gambar circle jika diaktifkan
+            systemOn = newStatus;
+            document.getElementById("header-sys").textContent = systemOn
+              ? "ON"
+              : "OFF";
+
+            if (systemOn) {
+              // gunakan safeZoneCenter dari server jika dikembalikan, fallback ke current coords
+              const lat =
+                j.safeZoneCenter && j.safeZoneCenter.lat
+                  ? j.safeZoneCenter.lat
+                  : currentLat;
+              const lon =
+                j.safeZoneCenter && j.safeZoneCenter.lon
+                  ? j.safeZoneCenter.lon
+                  : currentLon;
+
+              // hapus circle lama lalu buat baru
+              if (safeCircle) {
+                map.removeLayer(safeCircle);
+                safeCircle = null;
+              }
+              safeCircle = L.circle([lat, lon], {
+                radius: SAFE_RADIUS,
+                color: "green",
+                fillColor: "#28a745",
+                fillOpacity: 0.15,
+              }).addTo(map);
+
+              // center (opsional)
+              map.setView([lat, lon], 16);
+              console.log(
+                "[DEBUG] Safe zone circle dibuat di",
+                lat,
+                lon,
+                "radius",
+                SAFE_RADIUS
+              );
+            } else {
+              if (safeCircle) {
+                map.removeLayer(safeCircle);
+                safeCircle = null;
+              }
+              console.log("[DEBUG] Safe zone circle dihapus (system off)");
+            }
+
+            alert("Status sistem berhasil diubah");
+          } catch (error) {
+            console.error("[ERROR] Toggle system failed", error);
+            alert("Gagal mengubah status sistem: " + (error.message || error));
+          }
+        });
+
+      // ==== Tombol ON/OFF alarm manual ====
+      document
+        .getElementById("btn-alarm")
+        .addEventListener("click", async () => {
+          try {
+            const newAlarmState = !alarmOn;
+            await fetch(`${API_BASE}/alarm`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ on: newAlarmState }),
+            });
+            alarmOn = newAlarmState;
+            updateAlarmButtonUI();
+          } catch (error) {
+            alert("Gagal mengubah status alarm");
+          }
+        });
+
+      // ==== Tombol buka Telegram ====
+      document
+        .getElementById("btn-open-telegram")
+        .addEventListener("click", () => {
+          window.open("https://t.me/CamMont_bot", "_blank");
+        });
+
+      // Reset jalur
+      document
+        .getElementById("btn-reset-path")
+        .addEventListener("click", () => {
+          pathRaw = [];
+          pathKalman = [];
+          polylineRaw.setLatLngs([]);
+          polylineKalman.setLatLngs([]);
+        });
+
+      document.getElementById("zona-status").textContent = "-";
+    </script>
+  </body>
+</html>
